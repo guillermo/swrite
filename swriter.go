@@ -14,11 +14,12 @@ import (
 )
 
 type SlowWriter struct {
-	w  io.Writer
-	d  time.Duration
-	t  *time.Timer
-	in chan ([]byte)
-	e  error
+	w     io.Writer
+	d     time.Duration
+	t     *time.Timer
+	in    chan ([]byte)
+	e     error
+	flush chan (struct{})
 }
 
 // New returns a new SlowWriter
@@ -29,6 +30,7 @@ func New(w io.Writer, d time.Duration) *SlowWriter {
 		nil,
 		make(chan ([]byte)),
 		nil,
+		make(chan (struct{})),
 	}
 	go sw.loop()
 
@@ -41,14 +43,17 @@ func (w *SlowWriter) loop() {
 For:
 	for {
 		if w.t == nil {
-			data, ok := <-w.in
-			if !ok {
-				break For
+			select {
+			case data, ok := <-w.in:
+				if !ok {
+					break For
+				}
+				buf.Write(data)
+				w.t = time.NewTimer(w.d)
+			case <-w.flush:
 			}
-			buf.Write(data)
-			w.t = time.NewTimer(w.d)
+			continue
 		}
-
 		select {
 		case data, ok := <-w.in:
 			if !ok {
@@ -56,6 +61,14 @@ For:
 				break For
 			}
 			buf.Write(data)
+		case <-w.flush:
+			w.t.Stop()
+			_, err := buf.WriteTo(w.w)
+			if err != nil {
+				w.e = err
+			}
+			buf.Reset()
+			w.t = nil
 		case <-w.t.C:
 			_, err := buf.WriteTo(w.w)
 			if err != nil {
@@ -80,4 +93,9 @@ func (w *SlowWriter) Close() error {
 func (w *SlowWriter) Write(data []byte) (int, error) {
 	w.in <- data
 	return len(data), w.e
+}
+
+// Flush will inmediatly flush all the data
+func (w *SlowWriter) Flush() {
+	w.flush <- struct{}{}
 }
