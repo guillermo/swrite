@@ -1,5 +1,10 @@
 // Package swriter implements a buffered writer that dumps Writes with a maxium frequence.
 // The first write will wait for more writes and dump at a fixed frequence.
+//
+//     w := swriter.New(os.Stdout, time.Second / 60)
+//     w.Write("hello")
+//     w.Write("world")
+//     // After 1/60 seconds it will dump to os.Stdout all the previous writes.
 package swriter
 
 import (
